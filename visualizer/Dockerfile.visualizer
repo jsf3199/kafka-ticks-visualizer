@@ -1,7 +1,7 @@
 FROM node:20-slim
 WORKDIR /app
 COPY visualizer/package.json .
-RUN npm install express kafkajs ws chart.js chartjs-adapter-date-fns chartjs-plugin-zoom@2.0.1
+RUN npm install --no-cache
 COPY visualizer/ .
 EXPOSE 3000 3001
 CMD ["node", "server.js"]
