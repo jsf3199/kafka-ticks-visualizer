@@ -4,21 +4,22 @@ const fs = require('fs');
 const WebSocket = require('ws');
 const { Kafka } = require('kafkajs');
 
-const app = express();  // Definición explícita de 'app'
+const app = express();
 const PORT = 3000;
 
 // Middleware
-app.use(express.static(path.join(__dirname, 'public')));  // Sirve archivos estáticos (index.html)
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // Configuración de Kafka
 const kafka = new Kafka({
   clientId: 'visualizer',
-  brokers: ['kafka:9092']
+  brokers: ['kafka:9092'],
+  retry: { initialRetryTime: 100, retries: 8 }
 });
-const consumer = kafka.consumer({ groupId: 'visualizer' });
+const consumer = kafka.consumer({ groupId: 'visualizer', sessionTimeout: 10000 });
 
-// Ruta para listar símbolos (escanea /kafka-ticks-visualizer/data)
+// Ruta para listar símbolos
 app.get('/symbols', (req, res) => {
   const dataDir = '/kafka-ticks-visualizer/data';
   try {
@@ -32,7 +33,7 @@ app.get('/symbols', (req, res) => {
   }
 });
 
-// Ruta para datos por símbolo y rango de timestamps (soporta zoom y tubo)
+// Ruta para datos por símbolo y rango de timestamps
 app.get('/data/:symbol', (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const { start, end } = req.query;
@@ -44,7 +45,6 @@ app.get('/data/:symbol', (req, res) => {
     let rawData = fs.readFileSync(filePath, 'utf8');
     let data = JSON.parse('[' + rawData.replace(/}\s*{/g, '}, {') + ']');
 
-    // Filtrar por rango de timestamps si se proporciona
     if (start || end) {
       const startDate = start ? new Date(start) : new Date(0);
       const endDate = end ? new Date(end) : new Date();
@@ -54,8 +54,7 @@ app.get('/data/:symbol', (req, res) => {
       });
     }
 
-    data = data.slice(-1000);  // Limitar para rendimiento
-
+    data = data.slice(-1000); // Limitar para rendimiento
     res.json({
       symbol,
       ticks: data.map(tick => ({
@@ -69,6 +68,18 @@ app.get('/data/:symbol', (req, res) => {
   }
 });
 
+// Endpoint para sincronizar estado del gráfico
+app.post('/sync-state', (req, res) => {
+  const { symbol, start, end, zoom } = req.body;
+  console.log(`Estado sincronizado para ${symbol}: start=${start}, end=${end}, zoom=${zoom}`);
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'graph-move', symbol, start, end, zoom }));
+    }
+  });
+  res.json({ status: 'synced' });
+});
+
 // Inicializar consumidor Kafka
 async function runConsumer() {
   await consumer.connect();
@@ -77,18 +88,26 @@ async function runConsumer() {
     eachMessage: async ({ topic, partition, message }) => {
       const data = JSON.parse(message.value.toString());
       console.log(`Mensaje recibido de ${topic}: ${data.Symbol || data.symbol} at ${data.Timestamp || data.timestamp}`);
-      // Aquí, emita evento WebSocket o actualice cache para front-end
     },
   });
 }
-
-// Iniciar consumidor
 runConsumer().catch(console.error);
 
-// WebSocket para actualizaciones en vivo
+// WebSocket para actualizaciones en vivo y sincronización
 const wss = new WebSocket.Server({ port: 3001 });
 wss.on('connection', (ws) => {
-  console.log('Cliente conectado para actualizaciones en vivo');
+  console.log('Cliente conectado para sincronización');
+  ws.on('message', (message) => {
+    const data = JSON.parse(message);
+    if (data.type === 'graph-move') {
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(data));
+        }
+      });
+    }
+  });
+  // Polling para cambios en archivos
   const interval = setInterval(() => {
     const dataDir = '/kafka-ticks-visualizer/data';
     fs.readdir(dataDir, (err, files) => {
@@ -100,7 +119,7 @@ wss.on('connection', (ws) => {
 });
 console.log('WebSocket server listening on port 3001 for live updates');
 
-// Servir index.html como ruta raíz
+// Servir index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

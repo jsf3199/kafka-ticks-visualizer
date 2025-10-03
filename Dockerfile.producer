@@ -1,7 +1,0 @@
-FROM python:3.12-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip cache purge && pip install --no-cache-dir -r requirements.txt
-COPY producer/producer.py .
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 CMD python -c "import kafka; print('OK')"
-CMD ["python", "producer.py"]

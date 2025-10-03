@@ -1,0 +1,4 @@
+confluent-kafka==2.5.0
+pandas==2.2.2
+numpy==1.26.4
+statsmodels==0.14.2
