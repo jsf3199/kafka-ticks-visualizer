@@ -10,98 +10,83 @@ services:
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    networks:
+      - kafka-net
     volumes:
-      - kafka-data:/bitnami/kafka
+      - kafka-data:/bitnami
     healthcheck:
       test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 30s
-    networks:
-      - kafka-net
+      timeout: 5s
+      retries: 5
   producer:
     build:
       context: .
-      dockerfile: Dockerfile.producer
-    depends_on:
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./data:/data
-      - ./logs:/logs
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - DATA_DIR=/data
-    healthcheck:
-      test: ["CMD", "python", "-c", "from confluent_kafka import Producer; print('OK')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - kafka-net
-  aggregator:
-    build:
-      context: .
-      dockerfile: Dockerfile.aggregator
-    depends_on:
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./logs:/logs
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "python", "-c", "from confluent_kafka import Producer; print('OK')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - kafka-net
-  analyzer:
-    build:
-      context: .
-      dockerfile: Dockerfile.analyzer
-    depends_on:
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./logs:/logs
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "python", "-c", "from confluent_kafka import Producer; print('OK')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - kafka-net
-  visualizer:
-    build:
-      context: .
-      dockerfile: Dockerfile.visualizer
-    ports:
-      - "3000:3000"
-    depends_on:
-      kafka:
-        condition: service_healthy
+      dockerfile: producer/Dockerfile.producer
     volumes:
       - ./data:/kafka-ticks-visualizer/data
       - ./logs:/logs
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka-net
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (res) => { if (res.statusCode === 200) process.exit(0); process.exit(1); })"]
+      test: ["CMD", "python", "-c", "import confluent_kafka"]
       interval: 10s
       timeout: 5s
       retries: 5
+  aggregator:
+    build:
+      context: .
+      dockerfile: aggregator/Dockerfile.aggregator
+    depends_on:
+      kafka:
+        condition: service_healthy
     networks:
       - kafka-net
-volumes:
-  kafka-data:
+    healthcheck:
+      test: ["CMD", "python", "-c", "import confluent_kafka"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  analyzer:
+    build:
+      context: .
+      dockerfile: analyzer/Dockerfile.analyzer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import confluent_kafka"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  visualizer:
+    build:
+      context: .
+      dockerfile: visualizer/Dockerfile.visualizer
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - ./data:/kafka-ticks-visualizer/data
+      - ./logs:/logs
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 networks:
   kafka-net:
     driver: bridge
+volumes:
+  kafka-data:
