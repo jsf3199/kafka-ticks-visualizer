@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Kafka Ticks Visualizer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #symbols { margin-bottom: 20px; }
+    #timestamp-slider { margin-bottom: 20px; width: 100%; }
+    #chart-container { width: 100%; height: 400px; }
+    button { margin: 5px; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Visualizador de Ticks</h1>
+  <div id="symbols">
+    <h2>Símbolos Disponibles:</h2>
+    <ul id="symbol-list"></ul>
+  </div>
+  <div id="timestamp-slider">
+    <label for="start-range">Inicio:</label>
+    <input type="datetime-local" id="start-range" step="1">
+    <label for="end-range">Fin:</label>
+    <input type="datetime-local" id="end-range" step="1">
+    <button onclick="updateRange()">Actualizar Rango</button>
+  </div>
+  <div id="chart-container">
+    <canvas id="priceChart"></canvas>
+  </div>
+
+  <script>
+    let chart;
+    let currentSymbol = '';
+
+    // Cargar símbolos dinámicamente
+    async function loadSymbols() {
+      try {
+        const response = await fetch('/symbols');
+        const { symbols } = await response.json();
+        const list = document.getElementById('symbol-list');
+        list.innerHTML = symbols.map(symbol => `<li><button onclick="loadData('${symbol}')">${symbol}</button></li>`).join('');
+      } catch (error) {
+        console.error('Error al cargar símbolos:', error);
+      }
+    }
+
+    // Cargar datos y graficar con rango
+    async function loadData(symbol) {
+      currentSymbol = symbol;
+      const start = document.getElementById('start-range').value ? new Date(document.getElementById('start-range').value).toISOString() : '';
+      const end = document.getElementById('end-range').value ? new Date(document.getElementById('end-range').value).toISOString() : '';
+      const url = `/data/${symbol}${start ? `?start=${start}` : ''}${end ? `&end=${end}` : ''}`;
+      try {
+        const response = await fetch(url);
+        const { ticks } = await response.json();
+        renderChart(ticks, symbol);
+      } catch (error) {
+        console.error('Error al cargar datos:', error);
+      }
+    }
+
+    // Actualizar rango del tubo
+    function updateRange() {
+      if (currentSymbol) loadData(currentSymbol);
+    }
+
+    // Renderizar gráfico con zoom
+    function renderChart(ticks, symbol) {
+      const ctx = document.getElementById('priceChart').getContext('2d');
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ticks.map(tick => tick.timestamp),
+          datasets: [{
+            label: `${symbol} Price`,
+            data: ticks.map(tick => tick.price),
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            zoom: {
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
+              pan: { enabled: true, mode: 'xy' }
+            }
+          },
+          scales: {
+            x: { type: 'time', title: { display: true, text: 'Timestamp' } },
+            y: { title: { display: true, text: 'Price' } }
+          }
+        },
+        plugins: [ChartZoom]
+      });
+    }
+
+    // WebSocket para actualizaciones en vivo
+    const ws = new WebSocket('ws://localhost:3001');
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'live_update' && currentSymbol) {
+        loadData(currentSymbol);  // Refresca el gráfico
+      }
+    };
+
+    // Inicializar
+    loadSymbols();
+  </script>
+</body>
+</html>

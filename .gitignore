@@ -1,0 +1,25 @@
+# Logs
+# Ignora el directorio de logs y cualquier archivo .log en cualquier lugar.
+logs/
+*.log
+
+# Dependencias
+# Ignora las dependencias de Node.js.
+node_modules/
+
+# Archivos de entorno
+# Contienen secretos y configuraciones locales.
+.env
+
+# Archivos de sistema operativo y editores
+.DS_Store
+.vscode/
+.idea/
+
+# Archivos de respaldo y temporales
+*.bak
+
+# Archivos específicos del proyecto
+# Ignora el binario de Kafka descargado y los datos históricos.
+kafka-project/kafka_2.13-4.0.0.tgz
+data/

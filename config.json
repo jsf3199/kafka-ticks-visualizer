@@ -1,0 +1,5 @@
+{
+  "data_dir": "./data",
+  "symbols": ["BTCUSD", "EURUSD"],
+  "kafka_bootstrap": "localhost:9092"
+}
